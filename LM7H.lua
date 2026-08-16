@@ -84,18 +84,13 @@ end)
 FOVEnabled = false
 FOVRadius = 150
 FOVColor = Color3.fromRGB(168, 85, 247)
-TracerColor = Color3.fromRGB(255, 30, 30)
+AimSpeedVal = 5
+WhitelistedFriends = {}
 SpeedEnabled = false
 SpeedVal = 16
 JumpEnabled = false
 JumpVal = 50
 InfJumpEnabled = false
-ESPEnabled = false
-SkeletonEnabled = false
-BoxEnabled = false
-NeonEnabled = false
-TracerESPEnabled = false
-NameEnabled = false
 
 local FOVGui = Instance.new("ScreenGui")
 FOVGui.Name = "LM7H_FOV"
@@ -121,56 +116,127 @@ FOVStroke.Color = FOVColor
 FOVStroke.Transparency = 0
 FOVStroke.Parent = FOVFrame
 
-local RedLine = Instance.new("Frame")
-RedLine.AnchorPoint = Vector2.new(0.5, 0.5)
-RedLine.BackgroundColor3 = TracerColor
-RedLine.BorderSizePixel = 0
-RedLine.Visible = false
-RedLine.Parent = FOVGui
-
 UserInputService.JumpRequest:Connect(function()
     if InfJumpEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
     end
 end)
 
-RunService.RenderStepped:Connect(function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        if SpeedEnabled then LocalPlayer.Character.Humanoid.WalkSpeed = SpeedVal end
-        if JumpEnabled then LocalPlayer.Character.Humanoid.JumpPower = JumpVal end
-    end
-    local Camera = workspace.CurrentCamera
-    if not Camera then return end
-    FOVFrame.Size = UDim2.new(0, FOVRadius * 2, 0, FOVRadius * 2)
-    FOVFrame.Visible = FOVEnabled
-    FOVStroke.Color = FOVColor
-    if not FOVEnabled then RedLine.Visible = false return end
-    local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local closestTarget = nil
-    local shortestDistance = FOVRadius
+local function updateFriendHighlights()
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-            local screenPos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
-            if onScreen then
-                local dist = (Vector2.new(screenPos.X, screenPos.Y) - Center).Magnitude
-                if dist < shortestDistance then
-                    shortestDistance = dist
-                    closestTarget = Vector2.new(screenPos.X, screenPos.Y)
+        if player ~= LocalPlayer then
+            local isFriend = WhitelistedFriends[player.Name] == true
+            if isFriend and player.Character then
+                local hl = player.Character:FindFirstChild("LM7H_FriendHL")
+                if not hl then
+                    hl = Instance.new("Highlight")
+                    hl.Name = "LM7H_FriendHL"
+                    hl.FillColor = Color3.fromRGB(0, 255, 122)
+                    hl.FillTransparency = 0.75
+                    hl.OutlineColor = Color3.fromRGB(0, 255, 122)
+                    hl.OutlineTransparency = 0
+                    hl.Parent = player.Character
+                end
+            else
+                if player.Character and player.Character:FindFirstChild("LM7H_FriendHL") then
+                    player.Character.LM7H_FriendHL:Destroy()
                 end
             end
         end
     end
-    if closestTarget then
-        local length = (closestTarget - Center).Magnitude
-        local angle = math.deg(math.atan2(closestTarget.Y - Center.Y, closestTarget.X - Center.X))
-        local mid = (Center + closestTarget) / 2
-        RedLine.Position = UDim2.new(0, mid.X, 0, mid.Y)
-        RedLine.Size = UDim2.new(0, length, 0, 1.2)
-        RedLine.Rotation = angle
-        RedLine.BackgroundColor3 = TracerColor
-        RedLine.Visible = true
-    else
-        RedLine.Visible = false
+end
+
+RunService.RenderStepped:Connect(function()
+    updateFriendHighlights()
+
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        if SpeedEnabled then LocalPlayer.Character.Humanoid.WalkSpeed = SpeedVal end
+        if JumpEnabled then LocalPlayer.Character.Humanoid.JumpPower = JumpVal end
+    end
+    
+    local Camera = workspace.CurrentCamera
+    if not Camera then return end
+    
+    FOVFrame.Size = UDim2.new(0, FOVRadius * 2, 0, FOVRadius * 2)
+    FOVFrame.Visible = FOVEnabled
+    FOVStroke.Color = FOVColor
+    
+    if not FOVEnabled then return end
+    
+    local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local closestTarget = nil
+    local shortestDistance = FOVRadius
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and not WhitelistedFriends[player.Name] and player.Character then
+            local character = player.Character
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            local head = character:FindFirstChild("Head")
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            
+            if humanoid and head and hrp then
+                local isStateAlive = humanoid.Health > 1 and humanoid:GetState() ~= Enum.HumanoidStateType.Dead and humanoid:GetState() ~= Enum.HumanoidStateType.Physics and humanoid:GetState() ~= Enum.HumanoidStateType.Ragdoll
+                local isDowned = character:FindFirstChild("KO") or character:FindFirstChild("Knocked") or character:FindFirstChild("Downed") or (character:FindFirstChild("BodyEffects") and character.BodyEffects:FindFirstChild("K.O") and character.BodyEffects["K.O"].Value == true)
+                
+                if isStateAlive and not isDowned then
+                    local isTeamValid = true
+                    if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+                        isTeamValid = false
+                    end
+                    
+                    if isTeamValid then
+                        local screenPos, onScale = Camera:WorldToViewportPoint(head.Position)
+                        if onScale and screenPos.Z > 0 then
+                            local dist = (Vector2.new(screenPos.X, screenPos.Y) - Center).Magnitude
+                            if dist < shortestDistance then
+                                local origin = Camera.CFrame.Position
+                                local direction = (head.Position - origin)
+                                
+                                local ignoreList = {character}
+                                if LocalPlayer.Character then
+                                    table.insert(ignoreList, LocalPlayer.Character)
+                                end
+                                
+                                local raycastParams = RaycastParams.new()
+                                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                                raycastParams.FilterDescendantsInstances = ignoreList
+                                raycastParams.IgnoreWater = true
+                                
+                                local raycastResult = workspace:Raycast(origin, direction, raycastParams)
+                                local isValidTarget = false
+                                
+                                if not raycastResult then
+                                    isValidTarget = true
+                                else
+                                    local hitPart = raycastResult.Instance
+                                    if hitPart and (not hitPart.CanCollide) and hitPart.Transparency >= 0.95 then
+                                        isValidTarget = true
+                                    end
+                                end
+                                
+                                if isValidTarget then
+                                    shortestDistance = dist
+                                    closestTarget = {Head = head, HRP = hrp}
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if closestTarget and closestTarget.Head then
+        local targetPos = closestTarget.Head.Position
+        
+        if AimSpeedVal > 0 and closestTarget.HRP then
+            local velocityPrediction = closestTarget.HRP.Velocity * (AimSpeedVal / 18) * 0.22
+            targetPos = targetPos + velocityPrediction
+        end
+
+        local targetCFrame = CFrame.new(Camera.CFrame.Position, targetPos)
+        local smoothFactor = 0.12 + (AimSpeedVal * 0.005)
+        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(smoothFactor, 0.1, 0.25))
     end
 end)
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
@@ -179,8 +245,44 @@ local Window = WindUI:CreateWindow({Title = "LM7H", Icon = "bird", Author = "by 
 local PvPTab = Window:Tab({Title = "PvP", Icon = "swords", Locked = false})
 PvPTab:Toggle({Title = "Fov", Value = false, Callback = function(Value) FOVEnabled = Value end})
 PvPTab:Slider({Title = "Fov Radius", Value = {Min = 50, Max = 500, Default = 150}, Callback = function(Value) FOVRadius = (type(Value) == "table" and Value.Value) or Value end})
+PvPTab:Slider({Title = "Aim Speed / Prediction", Value = {Min = 1, Max = 20, Default = 5}, Callback = function(Value) AimSpeedVal = (type(Value) == "table" and Value.Value) or Value end})
 PvPTab:Colorpicker({Title = "Fov Color", Default = Color3.fromRGB(168, 85, 247), Callback = function(Value) FOVColor = Value end})
-PvPTab:Colorpicker({Title = "Tracer Color", Default = Color3.fromRGB(255, 30, 30), Callback = function(Value) TracerColor = Value end})
+
+local function getPlayerNames()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(list, p.Name)
+        end
+    end
+    return list
+end
+
+local FriendDropdown = PvPTab:Dropdown({
+    Title = "Whitelisted Friends",
+    Multi = true,
+    Values = getPlayerNames(),
+    Value = {},
+    Callback = function(SelectedTable)
+        WhitelistedFriends = {}
+        if type(SelectedTable) == "table" then
+            for _, name in pairs(SelectedTable) do
+                WhitelistedFriends[name] = true
+            end
+        elseif type(SelectedTable) == "string" then
+            WhitelistedFriends[SelectedTable] = true
+        end
+    end
+})
+
+PvPTab:Button({
+    Title = "Refresh Players List",
+    Callback = function()
+        if FriendDropdown and FriendDropdown.SetValues then
+            FriendDropdown:SetValues(getPlayerNames())
+        end
+    end
+})
 
 local CharTab = Window:Tab({Title = "Character", Icon = "user", Locked = false})
 CharTab:Toggle({Title = "Enable Speed", Value = false, Callback = function(Value) SpeedEnabled = Value end})
