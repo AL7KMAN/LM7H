@@ -137,9 +137,10 @@ local function updateFriendHighlights()
                     hl = Instance.new("Highlight")
                     hl.Name = "LM7H_FriendHL"
                     hl.FillColor = Color3.fromRGB(0, 255, 122)
-                    hl.FillTransparency = 0.75
+                    hl.FillTransparency = 0.6
                     hl.OutlineColor = Color3.fromRGB(0, 255, 122)
                     hl.OutlineTransparency = 0
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                     hl.Parent = player.Character
                 end
             else
@@ -252,16 +253,37 @@ local Window = WindUI:CreateWindow({
     }
 })
 
+local function notifyWindUI(title, message)
+    pcall(function()
+        if WindUI and WindUI.Notify then
+            WindUI:Notify({
+                Title = title or "LM7H",
+                Content = message,
+                Description = message,
+                Duration = 3,
+                Icon = "check"
+            })
+        elseif Window and Window.Notify then
+            Window:Notify({
+                Title = title or "LM7H",
+                Content = message,
+                Description = message,
+                Duration = 3
+            })
+        end
+    end)
+end
+
 local PvPTab = Window:Tab({Title = "PvP", Icon = "swords", Locked = false})
-PvPTab:Toggle({Title = "Fov", Value = false, Callback = function(Value) FOVEnabled = Value end})
-PvPTab:Slider({Title = "Fov Radius", Value = {Min = 50, Max = 500, Default = 150}, Callback = function(Value) FOVRadius = (type(Value) == "table" and Value.Value) or Value end})
-PvPTab:Slider({Title = "Aim Speed", Value = {Min = 1, Max = 20, Default = 5}, Callback = function(Value) AimSpeedVal = (type(Value) == "table" and Value.Value) or Value end})
-PvPTab:Colorpicker({Title = "Fov Color", Default = Color3.fromRGB(168, 85, 247), Callback = function(Value) FOVColor = Value end})
+local FovToggle = PvPTab:Toggle({Title = "Fov", Value = false, Callback = function(Value) FOVEnabled = Value end})
+local FovRadiusSlider = PvPTab:Slider({Title = "Fov Radius", Value = {Min = 50, Max = 500, Default = 150}, Callback = function(Value) FOVRadius = (type(Value) == "table" and Value.Value) or Value end})
+local AimSpeedSlider = PvPTab:Slider({Title = "Aim Speed", Value = {Min = 1, Max = 20, Default = 5}, Callback = function(Value) AimSpeedVal = (type(Value) == "table" and Value.Value) or Value end})
+local FovColorPicker = PvPTab:Colorpicker({Title = "Fov Color", Default = Color3.fromRGB(168, 85, 247), Callback = function(Value) FOVColor = Value end})
 
 local function getPlayerNames()
     local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then table.insert(list, p.Name) end
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+        if p ~= game:GetService("Players").LocalPlayer then table.insert(list, p.Name) end
     end
     return list
 end
@@ -274,8 +296,14 @@ local FriendDropdown = PvPTab:Dropdown({
     Callback = function(SelectedTable)
         WhitelistedFriends = {}
         if type(SelectedTable) == "table" then
-            for _, name in pairs(SelectedTable) do WhitelistedFriends[name] = true end
-        elseif type(SelectedTable) == "string" then
+            for k, v in pairs(SelectedTable) do
+                if type(v) == "string" then
+                    WhitelistedFriends[v] = true
+                elseif type(k) == "string" and v == true then
+                    WhitelistedFriends[k] = true
+                end
+            end
+        elseif type(SelectedTable) == "string" and SelectedTable ~= "" then
             WhitelistedFriends[SelectedTable] = true
         end
     end
@@ -283,16 +311,39 @@ local FriendDropdown = PvPTab:Dropdown({
 
 PvPTab:Button({Title = "Refresh Players List", Callback = function() if FriendDropdown and FriendDropdown.SetValues then FriendDropdown:SetValues(getPlayerNames()) end end})
 
+PvPTab:Button({
+    Title = "Reset Friends List", 
+    Callback = function() 
+        WhitelistedFriends = {}
+        for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("LM7H_FriendHL") then
+                p.Character.LM7H_FriendHL:Destroy()
+            end
+        end
+        pcall(function()
+            if FriendDropdown.Select then FriendDropdown:Select({}) end
+            if FriendDropdown.Set then FriendDropdown:Set({}) end
+            if FriendDropdown.SetValue then FriendDropdown:SetValue({}) end
+            if FriendDropdown.Value then FriendDropdown.Value = {} end
+            if FriendDropdown.SetValues then FriendDropdown:SetValues(getPlayerNames()) end
+        end)
+        notifyWindUI("LM7H", "تم تصفير القائمة وإلغاء التحديد بالكامل")
+    end
+})
+
 local CharTab = Window:Tab({Title = "Character", Icon = "user", Locked = false})
-CharTab:Toggle({Title = "Enable Speed", Value = false, Callback = function(Value) 
+local SpeedToggle = CharTab:Toggle({Title = "Enable Speed", Value = false, Callback = function(Value) 
     SpeedEnabled = Value 
+    local LocalPlayer = game:GetService("Players").LocalPlayer
     if not Value and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         LocalPlayer.Character.Humanoid.WalkSpeed = 16
     end
 end})
-CharTab:Slider({Title = "Speed Player", Value = {Min = 16, Max = 400, Default = 16}, Callback = function(Value) SpeedVal = (type(Value) == "table" and Value.Value) or Value end})
-CharTab:Toggle({Title = "Enable Jump Power", Value = false, Callback = function(Value) 
+local SpeedSlider = CharTab:Slider({Title = "Speed Player", Value = {Min = 16, Max = 400, Default = 16}, Callback = function(Value) SpeedVal = (type(Value) == "table" and Value.Value) or Value end})
+
+local JumpToggle = CharTab:Toggle({Title = "Enable Jump Power", Value = false, Callback = function(Value) 
     JumpEnabled = Value 
+    local LocalPlayer = game:GetService("Players").LocalPlayer
     if Value and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         local h = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         h.UseJumpPower = true
@@ -305,8 +356,9 @@ CharTab:Toggle({Title = "Enable Jump Power", Value = false, Callback = function(
         h.JumpHeight = 50 / 3
     end
 end})
-CharTab:Slider({Title = "Jump Power", Value = {Min = 50, Max = 300, Default = 50}, Callback = function(Value) 
+local JumpSlider = CharTab:Slider({Title = "Jump Power", Value = {Min = 50, Max = 300, Default = 50}, Callback = function(Value) 
     JumpVal = (type(Value) == "table" and Value.Value) or Value 
+    local LocalPlayer = game:GetService("Players").LocalPlayer
     if JumpEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         local h = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         h.UseJumpPower = true
@@ -314,11 +366,11 @@ CharTab:Slider({Title = "Jump Power", Value = {Min = 50, Max = 300, Default = 50
         h.JumpHeight = JumpVal / 3
     end
 end})
-CharTab:Toggle({Title = "Inf Jump", Value = false, Callback = function(Value) InfJumpEnabled = Value end})
+local InfJumpToggle = CharTab:Toggle({Title = "Inf Jump", Value = false, Callback = function(Value) InfJumpEnabled = Value end})
 
 CharTab:Divider()
 
-CharTab:Toggle({
+local SnapToggle = CharTab:Toggle({
     Title = "Enable Snap", 
     Value = false, 
     Callback = function(Value) 
@@ -327,7 +379,7 @@ CharTab:Toggle({
     end
 })
 
-CharTab:Dropdown({
+local SnapModeDropdown = CharTab:Dropdown({
     Title = "Snap Mode",
     Values = {"Above", "Under"},
     Value = "Above",
@@ -336,7 +388,7 @@ CharTab:Dropdown({
     end
 })
 
-CharTab:Slider({
+local SnapHeightSlider = CharTab:Slider({
     Title = "Snap Height", 
     Value = {Min = 0, Max = 50, Default = 0}, 
     Callback = function(Value) 
@@ -346,7 +398,9 @@ CharTab:Slider({
 
 CharTab:Divider()
 
-CharTab:Toggle({Title = "Noclip", Value = false, Callback = function(Value)
+local NoclipToggle = CharTab:Toggle({Title = "Noclip", Value = false, Callback = function(Value)
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local RunService = game:GetService("RunService")
     if not Value then
         if Nclipping then Nclipping:Disconnect() Nclipping = nil end
     else
@@ -358,6 +412,87 @@ CharTab:Toggle({Title = "Noclip", Value = false, Callback = function(Value)
                 end
             end
         end)
+    end
+end})
+
+local SettingsTab = Window:Tab({Title = "Settings", Icon = "settings", Locked = false})
+
+local HttpService = game:GetService("HttpService")
+
+local function updateUIElem(elem, val)
+    if not elem then return end
+    pcall(function()
+        if elem.Set then
+            elem:Set(val)
+        elseif elem.SetValue then
+            elem:SetValue(val)
+        end
+    end)
+end
+
+SettingsTab:Button({Title = "Save Config", Callback = function()
+    local Config = {
+        FOV = FOVEnabled,
+        FOVRadius = FOVRadius,
+        AimSpeed = AimSpeedVal,
+        Speed = SpeedEnabled,
+        SpeedVal = SpeedVal,
+        Jump = JumpEnabled,
+        JumpVal = JumpVal,
+        InfJump = InfJumpEnabled,
+        SnapEnabled = getgenv().SnapEnabled,
+        SnapMode = getgenv().SnapMode,
+        SnapVal = getgenv().SnapVal
+    }
+    writefile("LM7H_Config.json", HttpService:JSONEncode(Config))
+    notifyWindUI("LM7H", "تم حفظ الاعدادات")
+end})
+
+SettingsTab:Button({Title = "Load Config", Callback = function()
+    if isfile and isfile("LM7H_Config.json") then
+        local success, Data = pcall(function()
+            return HttpService:JSONDecode(readfile("LM7H_Config.json"))
+        end)
+        if success and Data then
+            FOVEnabled = Data.FOV or false
+            FOVRadius = Data.FOVRadius or 150
+            AimSpeedVal = Data.AimSpeed or 5
+            SpeedEnabled = Data.Speed or false
+            SpeedVal = Data.SpeedVal or 16
+            JumpEnabled = Data.Jump or false
+            JumpVal = Data.JumpVal or 50
+            InfJumpEnabled = Data.InfJump or false
+            getgenv().SnapEnabled = Data.SnapEnabled or false
+            getgenv().SnapMode = Data.SnapMode or "Above"
+            getgenv().SnapVal = Data.SnapVal or 0
+
+            updateUIElem(FovToggle, FOVEnabled)
+            updateUIElem(FovRadiusSlider, FOVRadius)
+            updateUIElem(AimSpeedSlider, AimSpeedVal)
+            updateUIElem(SpeedToggle, SpeedEnabled)
+            updateUIElem(SpeedSlider, SpeedVal)
+            updateUIElem(JumpToggle, JumpEnabled)
+            updateUIElem(JumpSlider, JumpVal)
+            updateUIElem(InfJumpToggle, InfJumpEnabled)
+            updateUIElem(SnapToggle, getgenv().SnapEnabled)
+            updateUIElem(SnapModeDropdown, getgenv().SnapMode)
+            updateUIElem(SnapHeightSlider, getgenv().SnapVal)
+
+            local LocalPlayer = game:GetService("Players").LocalPlayer
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                hum.WalkSpeed = SpeedEnabled and SpeedVal or 16
+                hum.UseJumpPower = true
+                hum.JumpPower = JumpEnabled and JumpVal or 50
+                hum.JumpHeight = (JumpEnabled and JumpVal or 50) / 3
+            end
+
+            notifyWindUI("LM7H", "تم تحديث السكربت")
+        else
+            notifyWindUI("LM7H", "فشل في قراءة ملف الإعدادات")
+        end
+    else
+        notifyWindUI("LM7H", "لا يوجد ملف إعدادات محفوظ")
     end
 end})
 
