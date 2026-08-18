@@ -4,6 +4,7 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 getgenv().SnapEnabled = false
 getgenv().SnapVal = 0
@@ -97,6 +98,15 @@ JumpEnabled = false
 JumpVal = 50
 InfJumpEnabled = false
 
+ESP_Settings = {
+    Loot = false,
+    Health = false,
+    Name = false,
+    Neon = false
+}
+
+local ESP_Storage = {}
+
 local FOVGui = Instance.new("ScreenGui")
 FOVGui.Name = "LM7H_FOV"
 FOVGui.ResetOnSpawn = false
@@ -111,9 +121,9 @@ FOVFrame.BackgroundTransparency = 1
 FOVFrame.Visible = false
 FOVFrame.Parent = FOVGui
 
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(1, 0)
-UICorner.Parent = FOVFrame
+local UICornerFOV = Instance.new("UICorner")
+UICornerFOV.CornerRadius = UDim.new(1, 0)
+UICornerFOV.Parent = FOVFrame
 
 local FOVStroke = Instance.new("UIStroke")
 FOVStroke.Thickness = 2
@@ -126,6 +136,222 @@ UserInputService.JumpRequest:Connect(function()
         LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
     end
 end)
+
+local function GetGroupedTools(player)
+    local grouped = {}
+    local indexMap = {}
+
+    local function addTool(tool)
+        if not tool:IsA("Tool") then return end
+        local nameKey = tool.Name
+        if indexMap[nameKey] then
+            indexMap[nameKey].count = indexMap[nameKey].count + 1
+            if indexMap[nameKey].texture == "" and tool.TextureId ~= "" then
+                indexMap[nameKey].texture = tool.TextureId
+            end
+        else
+            local data = {
+                name = tool.Name,
+                texture = tool.TextureId,
+                count = 1
+            }
+            table.insert(grouped, data)
+            indexMap[nameKey] = data
+        end
+    end
+
+    if player and player.Character then
+        for _, item in ipairs(player.Character:GetChildren()) do addTool(item) end
+    end
+    if player and player:FindFirstChild("Backpack") then
+        for _, item in ipairs(player.Backpack:GetChildren()) do addTool(item) end
+    end
+
+    return grouped
+end
+
+local function RemoveESP(player)
+    if ESP_Storage[player] then
+        if ESP_Storage[player].Highlight then ESP_Storage[player].Highlight:Destroy() end
+        if ESP_Storage[player].MainBB then ESP_Storage[player].MainBB:Destroy() end
+        ESP_Storage[player] = nil
+    end
+end
+
+local function ApplyESP(player)
+    if player == LocalPlayer or not player.Character then return end
+    RemoveESP(player)
+
+    local char = player.Character
+    local head = char:FindFirstChild("Head")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not head or not hum then return end
+
+    local hl = Instance.new("Highlight")
+    hl.FillColor = Color3.fromRGB(255, 0, 0)
+    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+    hl.FillTransparency = 0.6
+    hl.OutlineTransparency = 0.2
+    hl.Adornee = char
+    hl.Enabled = ESP_Settings.Neon
+    hl.Parent = char
+
+    local mainBB = Instance.new("BillboardGui")
+    mainBB.Adornee = head
+    mainBB.Size = UDim2.new(0, 200, 0, 60)
+    mainBB.StudsOffset = Vector3.new(0, 2.5, 0)
+    mainBB.AlwaysOnTop = true
+    mainBB.Parent = head
+
+    local mainLayout = Instance.new("UIListLayout")
+    mainLayout.FillDirection = Enum.FillDirection.Vertical
+    mainLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    mainLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    mainLayout.Padding = UDim.new(0, 3)
+    mainLayout.Parent = mainBB
+
+    local nameTxt = Instance.new("TextLabel")
+    nameTxt.Size = UDim2.new(1, 0, 0, 11)
+    nameTxt.BackgroundTransparency = 1
+    nameTxt.Text = player.Name
+    nameTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameTxt.TextSize = 10
+    nameTxt.Font = Enum.Font.GothamBold
+    nameTxt.TextStrokeTransparency = 0
+    nameTxt.Visible = ESP_Settings.Name
+    nameTxt.LayoutOrder = 1
+    nameTxt.Parent = mainBB
+
+    local hpBg = Instance.new("Frame")
+    hpBg.Size = UDim2.new(0, 60, 0, 3)
+    hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    hpBg.BorderSizePixel = 0
+    hpBg.Visible = ESP_Settings.Health
+    hpBg.LayoutOrder = 2
+    hpBg.Parent = mainBB
+
+    local hpCorner = Instance.new("UICorner")
+    hpCorner.CornerRadius = UDim.new(1, 0)
+    hpCorner.Parent = hpBg
+
+    local hpFill = Instance.new("Frame")
+    hpFill.Size = UDim2.new(1, 0, 1, 0)
+    hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+    hpFill.BorderSizePixel = 0
+    hpFill.Parent = hpBg
+
+    local hpFillCorner = Instance.new("UICorner")
+    hpFillCorner.CornerRadius = UDim.new(1, 0)
+    hpFillCorner.Parent = hpFill
+
+    local containerFrame = Instance.new("Frame")
+    containerFrame.Size = UDim2.new(1, 0, 0, 30)
+    containerFrame.BackgroundTransparency = 1
+    containerFrame.Visible = ESP_Settings.Loot
+    containerFrame.LayoutOrder = 3
+    containerFrame.Parent = mainBB
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.FillDirection = Enum.FillDirection.Horizontal
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.Parent = containerFrame
+
+    ESP_Storage[player] = {
+        Highlight = hl,
+        MainBB = mainBB,
+        NameTxt = nameTxt,
+        HpBg = hpBg,
+        HpFill = hpFill,
+        Container = containerFrame,
+        Humanoid = hum,
+        Head = head,
+        Character = char,
+        LastSignature = ""
+    }
+end
+
+local function UpdatePlayerTools(player)
+    local data = ESP_Storage[player]
+    if not data or not ESP_Settings.Loot then return end
+
+    local groupedTools = GetGroupedTools(player)
+    
+    local sigTable = {}
+    for _, item in ipairs(groupedTools) do
+        table.insert(sigTable, item.name .. ":" .. item.count)
+    end
+    local currentSig = table.concat(sigTable, "|")
+
+    local dist = (Camera.CFrame.Position - data.Head.Position).Magnitude
+    local iconSize = math.clamp(math.floor(300 / dist), 16, 26)
+
+    if data.LastSignature ~= currentSig then
+        data.LastSignature = currentSig
+        
+        for _, child in pairs(data.Container:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
+        end
+
+        if #groupedTools > 0 then
+            data.Container.Size = UDim2.new(1, 0, 0, iconSize + 4)
+            for _, item in ipairs(groupedTools) do
+                local itemFrame = Instance.new("Frame")
+                itemFrame.Size = UDim2.new(0, iconSize, 0, iconSize)
+                itemFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+                itemFrame.BackgroundTransparency = 0.2
+                itemFrame.BorderSizePixel = 0
+                itemFrame.Parent = data.Container
+
+                local frameCorner = Instance.new("UICorner")
+                frameCorner.CornerRadius = UDim.new(0, 4)
+                frameCorner.Parent = itemFrame
+
+                local frameStroke = Instance.new("UIStroke")
+                frameStroke.Color = Color3.fromRGB(255, 255, 255)
+                frameStroke.Thickness = 1
+                frameStroke.Parent = itemFrame
+
+                if item.texture ~= "" then
+                    local imgLabel = Instance.new("ImageLabel")
+                    imgLabel.Size = UDim2.new(1, -2, 1, -2)
+                    imgLabel.Position = UDim2.new(0, 1, 0, 1)
+                    imgLabel.BackgroundTransparency = 1
+                    imgLabel.Image = item.texture
+                    imgLabel.Parent = itemFrame
+                else
+                    local txtLabel = Instance.new("TextLabel")
+                    txtLabel.Size = UDim2.new(1, 0, 1, 0)
+                    txtLabel.BackgroundTransparency = 1
+                    txtLabel.Text = item.name:sub(1, 4)
+                    txtLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    txtLabel.TextSize = 8
+                    txtLabel.Font = Enum.Font.GothamBold
+                    txtLabel.Parent = itemFrame
+                end
+
+                if item.count > 1 then
+                    local countTxt = Instance.new("TextLabel")
+                    countTxt.Size = UDim2.new(1, 0, 0.4, 0)
+                    countTxt.Position = UDim2.new(0, -1, 0.6, 0)
+                    countTxt.BackgroundTransparency = 1
+                    countTxt.Text = "x" .. tostring(item.count)
+                    countTxt.TextColor3 = Color3.fromRGB(255, 220, 0)
+                    countTxt.TextSize = 8
+                    countTxt.Font = Enum.Font.GothamBold
+                    countTxt.TextStrokeTransparency = 0
+                    countTxt.TextXAlignment = Enum.TextXAlignment.Right
+                    countTxt.Parent = itemFrame
+                end
+            end
+        end
+    else
+        if #groupedTools > 0 then
+            data.Container.Size = UDim2.new(1, 0, 0, iconSize + 4)
+        end
+    end
+end
 
 local function updateFriendHighlights()
     for _, player in ipairs(Players:GetPlayers()) do
@@ -155,9 +381,7 @@ end
 RunService.Heartbeat:Connect(function()
     if getgenv().SnapEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         local hrp = LocalPlayer.Character.HumanoidRootPart
-        if not getgenv().BaseY then
-            getgenv().BaseY = hrp.Position.Y
-        end
+        if not getgenv().BaseY then getgenv().BaseY = hrp.Position.Y end
         local offset = (getgenv().SnapMode == "Above" and getgenv().SnapVal) or -getgenv().SnapVal
         local targetY = getgenv().BaseY + offset
         hrp.CFrame = CFrame.new(hrp.Position.X, targetY, hrp.Position.Z) * (hrp.CFrame - hrp.CFrame.Position)
@@ -169,57 +393,57 @@ end)
 
 RunService.RenderStepped:Connect(function()
     updateFriendHighlights()
+    
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         if SpeedEnabled then LocalPlayer.Character.Humanoid.WalkSpeed = SpeedVal end
         if JumpEnabled then LocalPlayer.Character.Humanoid.JumpPower = JumpVal end
     end
-    local Camera = workspace.CurrentCamera
-    if not Camera then return end
+    
     FOVFrame.Size = UDim2.new(0, FOVRadius * 2, 0, FOVRadius * 2)
     FOVFrame.Visible = FOVEnabled
     FOVStroke.Color = FOVColor
-    if not FOVEnabled then return end
-    local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local closestTarget = nil
-    local shortestDistance = FOVRadius
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and not WhitelistedFriends[player.Name] and player.Character then
-            local character = player.Character
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            local head = character:FindFirstChild("Head")
-            local hrp = character:FindFirstChild("HumanoidRootPart")
-            if humanoid and head and hrp then
-                local isStateAlive = humanoid.Health > 1 and humanoid:GetState() ~= Enum.HumanoidStateType.Dead and humanoid:GetState() ~= Enum.HumanoidStateType.Physics and humanoid:GetState() ~= Enum.HumanoidStateType.Ragdoll
-                local isDowned = character:FindFirstChild("KO") or character:FindFirstChild("Knocked") or character:FindFirstChild("Downed") or (character:FindFirstChild("BodyEffects") and character.BodyEffects:FindFirstChild("K.O") and character.BodyEffects["K.O"].Value == true)
-                if isStateAlive and not isDowned then
-                    local isTeamValid = true
-                    if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
-                        isTeamValid = false
-                    end
-                    if isTeamValid then
-                        local screenPos, onScale = Camera:WorldToViewportPoint(head.Position)
-                        if onScale and screenPos.Z > 0 then
-                            local dist = (Vector2.new(screenPos.X, screenPos.Y) - Center).Magnitude
-                            if dist < shortestDistance then
-                                local origin = Camera.CFrame.Position
-                                local direction = (head.Position - origin)
-                                local ignoreList = {character}
-                                if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
-                                local raycastParams = RaycastParams.new()
-                                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-                                raycastParams.FilterDescendantsInstances = ignoreList
-                                raycastParams.IgnoreWater = true
-                                local raycastResult = workspace:Raycast(origin, direction, raycastParams)
-                                local isValidTarget = false
-                                if not raycastResult then
-                                    isValidTarget = true
-                                else
-                                    local hitPart = raycastResult.Instance
-                                    if hitPart and (not hitPart.CanCollide) and hitPart.Transparency >= 0.95 then isValidTarget = true end
-                                end
-                                if isValidTarget then
-                                    shortestDistance = dist
-                                    closestTarget = {Head = head, HRP = hrp}
+    
+    if FOVEnabled then
+        local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        local closestTarget = nil
+        local shortestDistance = FOVRadius
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and not WhitelistedFriends[player.Name] and player.Character then
+                local character = player.Character
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                local head = character:FindFirstChild("Head")
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if humanoid and head and hrp then
+                    local isStateAlive = humanoid.Health > 1 and humanoid:GetState() ~= Enum.HumanoidStateType.Dead and humanoid:GetState() ~= Enum.HumanoidStateType.Physics and humanoid:GetState() ~= Enum.HumanoidStateType.Ragdoll
+                    local isDowned = character:FindFirstChild("KO") or character:FindFirstChild("Knocked") or character:FindFirstChild("Downed") or (character:FindFirstChild("BodyEffects") and character.BodyEffects:FindFirstChild("K.O") and character.BodyEffects["K.O"].Value == true)
+                    if isStateAlive and not isDowned then
+                        local isTeamValid = true
+                        if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then isTeamValid = false end
+                        if isTeamValid then
+                            local screenPos, onScale = Camera:WorldToViewportPoint(head.Position)
+                            if onScale and screenPos.Z > 0 then
+                                local dist = (Vector2.new(screenPos.X, screenPos.Y) - Center).Magnitude
+                                if dist < shortestDistance then
+                                    local origin = Camera.CFrame.Position
+                                    local direction = (head.Position - origin)
+                                    local ignoreList = {character}
+                                    if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
+                                    local raycastParams = RaycastParams.new()
+                                    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                                    raycastParams.FilterDescendantsInstances = ignoreList
+                                    raycastParams.IgnoreWater = true
+                                    local raycastResult = workspace:Raycast(origin, direction, raycastParams)
+                                    local isValidTarget = false
+                                    if not raycastResult then
+                                        isValidTarget = true
+                                    else
+                                        local hitPart = raycastResult.Instance
+                                        if hitPart and (not hitPart.CanCollide) and hitPart.Transparency >= 0.95 then isValidTarget = true end
+                                    end
+                                    if isValidTarget then
+                                        shortestDistance = dist
+                                        closestTarget = {Head = head, HRP = hrp}
+                                    end
                                 end
                             end
                         end
@@ -227,18 +451,55 @@ RunService.RenderStepped:Connect(function()
                 end
             end
         end
-    end
-    if closestTarget and closestTarget.Head then
-        local targetPos = closestTarget.Head.Position
-        if AimSpeedVal > 0 and closestTarget.HRP then
-            local velocityPrediction = closestTarget.HRP.Velocity * (AimSpeedVal / 18) * 0.22
-            targetPos = targetPos + velocityPrediction
+        if closestTarget and closestTarget.Head then
+            local targetPos = closestTarget.Head.Position
+            if AimSpeedVal > 0 and closestTarget.HRP then
+                local velocityPrediction = closestTarget.HRP.Velocity * (AimSpeedVal / 18) * 0.22
+                targetPos = targetPos + velocityPrediction
+            end
+                local targetCFrame = CFrame.new(Camera.CFrame.Position, targetPos)
+            local smoothFactor = 0.12 + (AimSpeedVal * 0.005)
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(smoothFactor, 0.1, 0.25))
         end
-        local targetCFrame = CFrame.new(Camera.CFrame.Position, targetPos)
-        local smoothFactor = 0.12 + (AimSpeedVal * 0.005)
-        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(smoothFactor, 0.1, 0.25))
+    end
+
+    local anyEspActive = ESP_Settings.Loot or ESP_Settings.Health or ESP_Settings.Name or ESP_Settings.Neon
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if anyEspActive and char and char:FindFirstChild("Head") and char:FindFirstChildOfClass("Humanoid") then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum.Health > 0 then
+                    if not ESP_Storage[player] or ESP_Storage[player].Character ~= char or not ESP_Storage[player].MainBB.Parent then
+                        ApplyESP(player)
+                    else
+                        local data = ESP_Storage[player]
+                        data.NameTxt.Visible = ESP_Settings.Name
+                        data.HpBg.Visible = ESP_Settings.Health
+                        data.Container.Visible = ESP_Settings.Loot
+                        data.Highlight.Enabled = ESP_Settings.Neon
+
+                        if ESP_Settings.Health then
+                            local hpPct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                            data.HpFill.Size = UDim2.new(hpPct, 0, 1, 0)
+                            data.HpFill.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPct), 255 * hpPct, 0)
+                        end
+
+                        if ESP_Settings.Loot then
+                            UpdatePlayerTools(player)
+                        end
+                    end
+                else
+                    RemoveESP(player)
+                end
+            else
+                RemoveESP(player)
+            end
+        end
     end
 end)
+
+Players.PlayerRemoving:Connect(RemoveESP)
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({
     Title = "LM7H - Purple Edition", 
@@ -331,6 +592,12 @@ PvPTab:Button({
     end
 })
 
+local ESPTab = Window:Tab({Title = "ESP", Icon = "eye", Locked = false})
+local LootToggle = ESPTab:Toggle({Title = "Loot", Value = false, Callback = function(Value) ESP_Settings.Loot = Value end})
+local HealthToggle = ESPTab:Toggle({Title = "Health", Value = false, Callback = function(Value) ESP_Settings.Health = Value end})
+local NameToggle = ESPTab:Toggle({Title = "Name", Value = false, Callback = function(Value) ESP_Settings.Name = Value end})
+local NeonToggle = ESPTab:Toggle({Title = "Neon", Value = false, Callback = function(Value) ESP_Settings.Neon = Value end})
+
 local CharTab = Window:Tab({Title = "Character", Icon = "user", Locked = false})
 local SpeedToggle = CharTab:Toggle({Title = "Enable Speed", Value = false, Callback = function(Value) 
     SpeedEnabled = Value 
@@ -416,7 +683,6 @@ local NoclipToggle = CharTab:Toggle({Title = "Noclip", Value = false, Callback =
 end})
 
 local SettingsTab = Window:Tab({Title = "Settings", Icon = "settings", Locked = false})
-
 local HttpService = game:GetService("HttpService")
 
 local function updateUIElem(elem, val)
@@ -442,7 +708,11 @@ SettingsTab:Button({Title = "Save Config", Callback = function()
         InfJump = InfJumpEnabled,
         SnapEnabled = getgenv().SnapEnabled,
         SnapMode = getgenv().SnapMode,
-        SnapVal = getgenv().SnapVal
+        SnapVal = getgenv().SnapVal,
+        ESP_Loot = ESP_Settings.Loot,
+        ESP_Health = ESP_Settings.Health,
+        ESP_Name = ESP_Settings.Name,
+        ESP_Neon = ESP_Settings.Neon
     }
     writefile("LM7H_Config.json", HttpService:JSONEncode(Config))
     notifyWindUI("LM7H", "تم حفظ الاعدادات")
@@ -466,6 +736,11 @@ SettingsTab:Button({Title = "Load Config", Callback = function()
             getgenv().SnapMode = Data.SnapMode or "Above"
             getgenv().SnapVal = Data.SnapVal or 0
 
+            ESP_Settings.Loot = Data.ESP_Loot or false
+            ESP_Settings.Health = Data.ESP_Health or false
+            ESP_Settings.Name = Data.ESP_Name or false
+            ESP_Settings.Neon = Data.ESP_Neon or false
+
             updateUIElem(FovToggle, FOVEnabled)
             updateUIElem(FovRadiusSlider, FOVRadius)
             updateUIElem(AimSpeedSlider, AimSpeedVal)
@@ -477,6 +752,11 @@ SettingsTab:Button({Title = "Load Config", Callback = function()
             updateUIElem(SnapToggle, getgenv().SnapEnabled)
             updateUIElem(SnapModeDropdown, getgenv().SnapMode)
             updateUIElem(SnapHeightSlider, getgenv().SnapVal)
+
+            updateUIElem(LootToggle, ESP_Settings.Loot)
+            updateUIElem(HealthToggle, ESP_Settings.Health)
+            updateUIElem(NameToggle, ESP_Settings.Name)
+            updateUIElem(NeonToggle, ESP_Settings.Neon)
 
             local LocalPlayer = game:GetService("Players").LocalPlayer
             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
